@@ -19,4 +19,9 @@ public class GreetingController {
         log.info("response greeting list: {}", greetings);
         return ResponseEntity.ok(greetings);
     }
+
+    @GetMapping("/error")
+    public ResponseEntity<String> error() {
+        throw new RuntimeException("Designed error!");
+    }
 }
