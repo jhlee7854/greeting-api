@@ -14,7 +14,7 @@ public class GreetingController {
     @GetMapping("/greet")
     public ResponseEntity<List<String>> greet() {
         RestTemplate restTemplate = new RestTemplate();
-        List<String> users = restTemplate.getForObject("http://user-api.user/users", List.class);
+        List<String> users = restTemplate.getForObject("http://user-api-005.user/users", List.class);
         List<String> greetings = users.stream().map(user -> "Hello, " + user).toList();
         log.info("response greeting list: {}", greetings);
         return ResponseEntity.ok(greetings);
