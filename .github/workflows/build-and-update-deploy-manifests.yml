@@ -1,0 +1,78 @@
+name: Build and Update Deploy Manifests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      project-version: ${{ steps.set-project-version.outputs.PROJECT_VERSION }}
+    steps:
+      - name: Checkout Project Sources
+        uses: actions/checkout@v4
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Run build with Gradle Wrapper
+        run: ./gradlew test build
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set project version
+        id: set-project-version
+        run: |
+          echo "PROJECT_VERSION=$(${{ github.workspace }}/gradlew -q printProjectVersion)" >> $GITHUB_OUTPUT
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: jonghak/${{ github.event.repository.name }}:${{ steps.set-project-version.outputs.PROJECT_VERSION }}
+
+  update-deploy-manifests:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_VERSION: ${{ needs.build.outputs.project-version }}
+    steps:
+      - name: Deploy Manifests Source Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}-deploy
+          ref: main
+          path: ${{ github.repository }}-deploy
+          token: '${{ secrets.REPO_SECRET }}'
+      - name: Set App Version
+        run: |
+          cd ${{ github.repository }}-deploy
+          CURRENT_VERSION=$(grep "nameSuffix:" kustomize/base/kustomization.yaml | grep -o "[0-9]*")
+          echo "APP_VERSION=v$((CURRENT_VERSION+1))" >> $GITHUB_ENV
+      - name: Update Version in Deploy Manifest
+        run: |
+          cd ${{ github.repository }}-deploy
+          sed -i 's/nameSuffix:.*/nameSuffix: "-${{ env.APP_VERSION }}"/g' kustomize/base/kustomization.yaml
+          sed -i 's/version:.*/version: "${{ env.APP_VERSION }}"/g' kustomize/base/kustomization.yaml
+          sed -i 's/app.kubernetes.io\/version:.*/app.kubernetes.io\/version: "${{ env.PROJECT_VERSION }}"/g' kustomize/base/kustomization.yaml
+          sed -i 's/newTag:.*/newTag: "${{ env.PROJECT_VERSION }}"/g' kustomize/base/kustomization.yaml
+      - name: Commit and Push Manifests
+        run: |
+          cd ${{ github.repository }}-deploy
+          git config --global user.name ${{ github.event.pusher.name || 'jonghak' }}
+          git config --global user.email ${{ github.event.pusher.email || 'jhlee7854@gmail.com' }}
+          git add .
+          git commit -m "Set new image tag $PROJECT_VERSION"
+          git push
