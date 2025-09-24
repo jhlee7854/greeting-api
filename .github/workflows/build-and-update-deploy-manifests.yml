@@ -22,6 +22,21 @@ jobs:
         uses: gradle/gradle-build-action@v2
       - name: Run build with Gradle Wrapper
         run: ./gradlew test build
+      - name: Upload Test Reports
+        if: failure() # Only upload if the previous step (build/test) failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/problems/
+            **/build/reports/tests/
+            **/build/test-results/
+      - name: Upload build reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            **/build/reports/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Setup Docker Buildx
